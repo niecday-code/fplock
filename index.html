@@ -73,6 +73,12 @@ input{flex:1;min-width:0;font:inherit;font-size:16px;min-height:44px;border-radi
   background:var(--panel);color:var(--ink);padding:0 12px}
 pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Menlo,monospace;
   background:var(--panel);border:2px solid var(--line);border-radius:12px;padding:10px;white-space:pre-wrap}
+.fpt button.nm{font:inherit;font-size:16px;text-align:left;background:none;border:0;color:var(--ink);min-height:44px;padding:0;cursor:pointer}
+.nm:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.cnt{font-size:14px;color:var(--mute);min-width:64px;text-align:right}
+.cnt.over{color:var(--stop)}
+.fpr.saving{opacity:.6}
+.hint{font-size:14px;color:var(--mute);margin:4px 0}
 @media (prefers-reduced-motion:reduce){.knob i{transition:none}}
 </style>
 </head>
@@ -95,6 +101,7 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 <details>
   <summary>清單</summary>
   <div class="row"><button class="mini" id="fpRefresh">重新整理</button></div>
+  <div class="hint">點名稱即可改名,按 Enter 儲存</div>
   <div id="fpl">尚未讀取。</div>
 </details>
 <details>
@@ -153,6 +160,8 @@ function refresh() {
 }
 const ACT_NAME = { acc_on: '電門開', acc_off: '電門關', seat: '座墊', fuel: '油箱蓋', name: '改名', del: '刪除' };
 let fpRows = [];
+let editId = null, draft = null, pend = null, pendTimer = null, focusNext = false;
+const NAME_MAX = 20;   // 韌體限制:20 位元組
 function holdFire(el, ms, fn) {
   let timer = null;
   const start = () => {
@@ -168,32 +177,76 @@ function holdFire(el, ms, fn) {
   el.addEventListener('keyup', cancel);
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
+const byteLen = t => enc.encode(t).length;
+function clipBytes(t) {
+  let o = '';
+  for (const ch of t) { if (byteLen(o + ch) > NAME_MAX) break; o += ch; }
+  return o;
+}
+function finishPend() { pend = null; clearTimeout(pendTimer); }
+function leaveEdit() { editId = null; draft = null; finishPend(); renderFp(); }
+function viewRow(r) {
+  const row = document.createElement('div'); row.className = 'fpr';
+  const top = document.createElement('div'); top.className = 'fpt';
+  const nm = document.createElement('button'); nm.className = 'nm'; nm.textContent = r.id + '  ' + r.name;
+  nm.setAttribute('aria-label', '改名 ' + r.id + ' ' + r.name);
+  nm.addEventListener('click', () => { editId = r.id; draft = null; focusNext = true; finishPend(); renderFp(); });
+  top.append(nm);
+  row.append(top);
+  return row;
+}
+function editRow(r) {
+  const row = document.createElement('div'); row.className = 'fpr';
+  const line = document.createElement('div'); line.className = 'fpe';
+  const inp = document.createElement('input');
+  inp.value = draft !== null ? draft : r.name;
+  inp.enterKeyHint = 'done'; inp.autocomplete = 'off'; inp.setAttribute('aria-label', '名稱');
+  const cnt = document.createElement('span'); cnt.className = 'cnt';
+  const upd = () => { const n = byteLen(inp.value); cnt.textContent = n + '/' + NAME_MAX + ' B'; cnt.classList.toggle('over', n > NAME_MAX); };
+  upd();
+  inp.addEventListener('input', e => { if (!e.isComposing) inp.value = clipBytes(inp.value); draft = inp.value; upd(); });
+  inp.addEventListener('compositionend', () => { inp.value = clipBytes(inp.value); draft = inp.value; upd(); });
+  line.append(inp, cnt);
+  const acts = document.createElement('div'); acts.className = 'fpe';
+  const cancel = document.createElement('button'); cancel.className = 'mini'; cancel.textContent = '取消';
+  cancel.addEventListener('click', leaveEdit);
+  const del = document.createElement('button'); del.className = 'mini del'; del.textContent = '刪除(按住 1 秒)';
+  holdFire(del, 1000, () => send('@del ' + r.id));
+  acts.append(cancel, del);
+  const save = () => {
+    if (pend) return;
+    const v = clipBytes(inp.value.trim());
+    if (!v) { toast('名稱不可空白', true); return; }
+    if (v === r.name) { leaveEdit(); return; }
+    pend = { id: r.id, name: v };
+    draft = v;
+    inp.disabled = true; cancel.disabled = true; del.disabled = true;
+    row.classList.add('saving'); cnt.textContent = '儲存中…';
+    clearTimeout(pendTimer);
+    pendTimer = setTimeout(() => { finishPend(); focusNext = true; toast('改名逾時,請再試一次', true); renderFp(); }, 4000);
+    send('@name ' + r.id + ' ' + v).then(ok => {
+      if (!ok) { finishPend(); focusNext = true; renderFp(); toast('送出失敗', true); }
+    });
+  };
+  inp.addEventListener('keydown', e => {
+    if (e.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    else if (e.key === 'Escape') leaveEdit();
+  });
+  row.append(line, acts);
+  return row;
+}
 function renderFp() {
   const box = $('fpl');
   box.textContent = '';
   if (!fpRows.length) { box.textContent = '沒有指紋。'; return; }
-  fpRows.forEach(r => {
-    const row = document.createElement('div'); row.className = 'fpr';
-    const top = document.createElement('div'); top.className = 'fpt';
-    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = r.id + '  ' + r.name;
-    const edit = document.createElement('button'); edit.className = 'mini'; edit.textContent = '編輯';
-    top.append(nm, edit);
-    const ed = document.createElement('div'); ed.className = 'fpe'; ed.hidden = true;
-    const inp = document.createElement('input'); inp.value = r.name; inp.maxLength = 20; inp.setAttribute('aria-label', '名稱');
-    const save = document.createElement('button'); save.className = 'mini'; save.textContent = '儲存名稱';
-    save.addEventListener('click', () => {
-      const v = inp.value.trim();
-      if (!v) { toast('名稱不可空白', true); return; }
-      if (enc.encode(v).length > 20) { toast('名稱最多 20 位元組(約 6 個中文字)', true); return; }
-      send('@name ' + r.id + ' ' + v);
-    });
-    const del = document.createElement('button'); del.className = 'mini del'; del.textContent = '刪除(按住 1 秒)';
-    holdFire(del, 1000, () => send('@del ' + r.id));
-    ed.append(inp, save, del);
-    edit.addEventListener('click', () => { ed.hidden = !ed.hidden; edit.textContent = ed.hidden ? '編輯' : '收合'; });
-    row.append(top, ed);
-    box.appendChild(row);
-  });
+  if (editId !== null && !fpRows.some(r => r.id === editId)) { editId = null; draft = null; finishPend(); }
+  fpRows.forEach(r => box.appendChild(r.id === editId ? editRow(r) : viewRow(r)));
+  if (focusNext) {
+    focusNext = false;
+    const i = box.querySelector('input');
+    if (i && !i.disabled) { i.focus(); i.select(); }
+  }
 }
 function loadFp() { fpRows = []; $('fpl').textContent = '讀取中…'; send('@fl'); }
 let toastTimer = null;
@@ -217,7 +270,15 @@ function handle(line) {
   m0 = line.match(/^(OK|ERR) (\S+)\s*(.*)$/);
   if (m0) {
     const nm = ACT_NAME[m0[2]] || m0[2];
-    if (m0[1] === 'OK' && (m0[2] === 'name' || m0[2] === 'del')) loadFp();
+    if (m0[2] === 'name') {
+      if (m0[1] === 'OK') {
+        if (pend) {
+          const r = fpRows.find(x => x.id === pend.id);
+          if (r) r.name = pend.name;
+          finishPend(); editId = null; draft = null; renderFp();   // 只更新該列,不重讀清單
+        } else loadFp();   // 逾時後才收到回覆:資料可能不同步,重讀一次
+      } else { finishPend(); focusNext = true; renderFp(); }
+    } else if (m0[1] === 'OK' && m0[2] === 'del') loadFp();
     if (m0[1] === 'OK') { toast(nm + ' 完成'); if (navigator.vibrate) navigator.vibrate(m0[2] === 'seat' || m0[2] === 'fuel' ? [30, 40, 30] : 20); }
     else { toast(nm + ' 被拒絕:' + m0[3], true); if (navigator.vibrate) navigator.vibrate([80, 60, 80]); }
     return;
