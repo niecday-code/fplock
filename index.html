@@ -79,6 +79,16 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 .cnt.over{color:var(--stop)}
 .fpr.saving{opacity:.6}
 .hint{font-size:14px;color:var(--mute);margin:4px 0}
+.sec{font-weight:600;margin:12px 0 4px}
+.t-ok{color:var(--go)}
+.t-FAIL{color:var(--stop);font-weight:700}
+.t-manual{color:var(--mute);font-style:italic}
+.t-skip{color:var(--mute)}
+#selfsum{font-weight:600;margin:6px 0}
+.addbox{border:2px solid var(--ink);border-radius:14px;padding:10px 12px;margin:8px 0;background:var(--panel)}
+.addbox[hidden]{display:none}
+.addbox p{margin:0 0 8px}
+.addbox progress{width:100%;height:14px;margin:0 0 10px}
 @media (prefers-reduced-motion:reduce){.knob i{transition:none}}
 </style>
 </head>
@@ -99,18 +109,43 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 <div id="toast" role="status"></div>
 
 <details>
-  <summary>清單</summary>
-  <div class="row"><button class="mini" id="fpRefresh">重新整理</button></div>
-  <div class="hint">點名稱即可改名,按 Enter 儲存</div>
-  <div id="fpl">尚未讀取。</div>
-</details>
-<details>
   <summary>記錄</summary>
   <pre id="log" aria-live="polite"></pre>
 </details>
+<details id="fpd">
+  <summary>清單</summary>
+  <div class="row"><button class="mini" id="fpAdd">＋新增指紋</button><button class="mini" id="cardAdd">＋新增卡片</button><button class="mini" id="fpRefresh">重新整理</button></div>
+  <div class="addbox" id="addbox" hidden>
+    <p id="addTxt">請依燈號按手指,共 6 次</p>
+    <progress id="addProg" max="6" value="0"></progress>
+    <div class="hint" id="addHint">藍閃 = 取像中,黃亮 = 取像成功,綠閃 = 這次完成請抬手</div>
+    <div class="row"><button class="mini" id="addCancel">取消</button></div>
+  </div>
+  <div class="hint">點名稱即可改名,按 Enter 儲存</div>
+  <div id="fpl">尚未讀取。</div>
+</details>
+<details id="tools">
+  <summary>測試工具</summary>
+  <div class="hint">輸出看上方「記錄」(以 T 開頭;綠 = 通過,紅 = 失敗,斜體 = 需要你目視確認)。量電流前先拔 USB。</div>
+  <div id="selfsum"></div>
+  <div class="row">
+    <button class="mini" data-t="@t">統計</button>
+    <button class="mini" data-t="@tlog">事件記錄</button>
+    <button class="mini" data-t="@tself">自檢</button>
+    <button class="mini" data-t="@tclr">清除統計</button>
+  </div>
+  <div class="row">
+    <button class="mini" data-t="@tpwr 1">睡眠量測:射頻開</button>
+    <button class="mini" data-t="@tpwr 2">睡眠量測:停止</button>
+    <button class="mini" data-t="@tpwr 3">睡眠量測:RESET 低</button>
+  </div>
+  <div class="row">
+    <button class="mini" data-t="@tsleep">立即睡眠</button>
+    <button class="mini" data-t="@tnosleep">切換自動睡眠</button>
+  </div>
+</details>
 <details>
-  <summary>選單</summary>
-  <div class="row" id="menu"></div>
+  <summary>文字輸入</summary>
   <div class="row"><input id="free" placeholder="輸入文字,按 Enter 送出" autocomplete="off"><button class="mini" id="sendFree">送出</button></div>
 </details>
 
@@ -125,7 +160,6 @@ const BUTTONS = [
   { cmd: 'seat',   label: '座墊',   sub: '輕點', hold: false, cls: ''     },
   { cmd: 'fuel',   label: '油箱蓋', sub: '按住', hold: true,  cls: 'stop' },
 ];
-const MENU = [['新增','1'],['刪除','2'],['清單','3'],['進階','6'],['取消','0']];
 // ===== 以下是 Nordic UART 服務,和韌體一致 =====
 const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const RXU = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 手機寫入
@@ -138,9 +172,12 @@ const btnEls = [];
 
 function log(t) {
   const el = $('log');
-  el.textContent += t + '\n';
-  const lines = el.textContent.split('\n');
-  if (lines.length > 80) el.textContent = lines.slice(-60).join('\n');
+  const sp = document.createElement('span');
+  sp.textContent = t + '\n';
+  const m = t.match(/^T (ok|FAIL|manual|skip|info) /);
+  if (m) sp.className = 't-' + m[1];
+  el.appendChild(sp);
+  while (el.childNodes.length > 300) el.removeChild(el.firstChild);   // 自檢與統計行數多,保留 300 行
   el.scrollTop = el.scrollHeight;
 }
 function setConn(text, ok) { const c = $('conn'); c.textContent = text; c.dataset.ok = ok ? '1' : '0'; refresh(); }
@@ -157,11 +194,16 @@ function refresh() {
     el.querySelector('small').textContent = CMD[b.cmd] == null ? '尚未支援' : b.sub;
   });
   $('fpRefresh').disabled = !live;
+  $('fpAdd').disabled = !live || !!adding;
+  $('cardAdd').disabled = !live || !!adding;
+  document.querySelectorAll('[data-t]').forEach(b => { b.disabled = !live || !!adding; });
 }
-const ACT_NAME = { acc_on: '電門開', acc_off: '電門關', seat: '座墊', fuel: '油箱蓋', name: '改名', del: '刪除' };
-let fpRows = [];
-let editId = null, draft = null, pend = null, pendTimer = null, focusNext = false;
-const NAME_MAX = 20;   // 韌體限制:20 位元組
+const ACT_NAME = { acc_on: '電門開', acc_off: '電門關', seat: '座墊', fuel: '油箱蓋', name: '改名', del: '刪除', add: '新增指紋', addcard: '新增卡片', cname: '卡片改名', cdel: '卡片刪除' };
+let fpRows = [], cardRows = [];
+let editKey = null, draft = null, pend = null, pendTimer = null, focusNext = false;
+let adding = null, addTimer = null, newKey = null;
+let selfRes = null;   // 自檢統計   // adding = 'fp' | 'card'
+const NAME_MAX = 30;   // 韌體限制:30 位元組(約 10 個中文字),與 MAX_NAME_BYTES 一致
 function holdFire(el, ms, fn) {
   let timer = null;
   const start = () => {
@@ -183,14 +225,16 @@ function clipBytes(t) {
   for (const ch of t) { if (byteLen(o + ch) > NAME_MAX) break; o += ch; }
   return o;
 }
+const rk = r => r.kind + ':' + r.id;
+const LIST_CMD = { fp: { name: '@name ', del: '@del ' }, card: { name: '@cname ', del: '@cdel ' } };
 function finishPend() { pend = null; clearTimeout(pendTimer); }
-function leaveEdit() { editId = null; draft = null; finishPend(); renderFp(); }
+function leaveEdit() { editKey = null; draft = null; finishPend(); renderFp(); }
 function viewRow(r) {
   const row = document.createElement('div'); row.className = 'fpr';
   const top = document.createElement('div'); top.className = 'fpt';
   const nm = document.createElement('button'); nm.className = 'nm'; nm.textContent = r.id + '  ' + r.name;
   nm.setAttribute('aria-label', '改名 ' + r.id + ' ' + r.name);
-  nm.addEventListener('click', () => { editId = r.id; draft = null; focusNext = true; finishPend(); renderFp(); });
+  nm.addEventListener('click', () => { editKey = rk(r); draft = null; focusNext = true; finishPend(); renderFp(); });
   top.append(nm);
   row.append(top);
   return row;
@@ -211,20 +255,20 @@ function editRow(r) {
   const cancel = document.createElement('button'); cancel.className = 'mini'; cancel.textContent = '取消';
   cancel.addEventListener('click', leaveEdit);
   const del = document.createElement('button'); del.className = 'mini del'; del.textContent = '刪除(按住 1 秒)';
-  holdFire(del, 1000, () => send('@del ' + r.id));
+  holdFire(del, 1000, () => send(LIST_CMD[r.kind].del + r.id));
   acts.append(cancel, del);
   const save = () => {
     if (pend) return;
     const v = clipBytes(inp.value.trim());
     if (!v) { toast('名稱不可空白', true); return; }
     if (v === r.name) { leaveEdit(); return; }
-    pend = { id: r.id, name: v };
+    pend = { kind: r.kind, id: r.id, name: v };
     draft = v;
     inp.disabled = true; cancel.disabled = true; del.disabled = true;
     row.classList.add('saving'); cnt.textContent = '儲存中…';
     clearTimeout(pendTimer);
     pendTimer = setTimeout(() => { finishPend(); focusNext = true; toast('改名逾時,請再試一次', true); renderFp(); }, 4000);
-    send('@name ' + r.id + ' ' + v).then(ok => {
+    send(LIST_CMD[r.kind].name + r.id + ' ' + v).then(ok => {
       if (!ok) { finishPend(); focusNext = true; renderFp(); toast('送出失敗', true); }
     });
   };
@@ -239,16 +283,40 @@ function editRow(r) {
 function renderFp() {
   const box = $('fpl');
   box.textContent = '';
-  if (!fpRows.length) { box.textContent = '沒有指紋。'; return; }
-  if (editId !== null && !fpRows.some(r => r.id === editId)) { editId = null; draft = null; finishPend(); }
-  fpRows.forEach(r => box.appendChild(r.id === editId ? editRow(r) : viewRow(r)));
+  if (editKey !== null && !fpRows.concat(cardRows).some(r => rk(r) === editKey)) { editKey = null; draft = null; finishPend(); }
+  const sec = (title, rows, empty) => {
+    const h = document.createElement('div'); h.className = 'sec'; h.textContent = title; box.appendChild(h);
+    if (!rows.length) { const e = document.createElement('div'); e.className = 'hint'; e.textContent = empty; box.appendChild(e); }
+    rows.forEach(r => box.appendChild(rk(r) === editKey ? editRow(r) : viewRow(r)));
+  };
+  sec('指紋', fpRows, '沒有指紋。');
+  sec('卡片', cardRows, '沒有卡片。');
   if (focusNext) {
     focusNext = false;
     const i = box.querySelector('input');
     if (i && !i.disabled) { i.focus(); i.select(); }
   }
 }
-function loadFp() { fpRows = []; $('fpl').textContent = '讀取中…'; send('@fl'); }
+function setProg(n) { $('addProg').value = n; $('addTxt').textContent = n ? '第 ' + n + ' / 6 次完成' : '請依燈號按手指,共 6 次'; }
+function endAdd() {
+  adding = null; clearTimeout(addTimer);
+  $('addbox').hidden = true; $('addCancel').disabled = false;
+  refresh();
+}
+function startAdd(kind) {
+  if (adding || !rx) return;
+  adding = kind;
+  $('addProg').hidden = kind === 'card';
+  $('addHint').hidden = kind === 'card';
+  if (kind === 'fp') setProg(0);
+  else $('addTxt').textContent = '請在 20 秒內把卡片靠近感應區(已在感應區的卡請先拿開)';
+  $('addbox').hidden = false; $('fpd').open = true;
+  refresh();
+  clearTimeout(addTimer);
+  addTimer = setTimeout(() => { endAdd(); toast('新增逾時,請重新整理清單確認', true); }, kind === 'fp' ? 100000 : 30000);
+  send(kind === 'fp' ? '@add' : '@addcard').then(ok => { if (!ok) { endAdd(); toast('送出失敗', true); } });
+}
+function loadFp() { fpRows = []; cardRows = []; $('fpl').textContent = '讀取中…'; send('@fl'); }
 let toastTimer = null;
 function toast(msg, bad) {
   const t = $('toast');
@@ -258,9 +326,40 @@ function toast(msg, bad) {
 }
 function handle(line) {
   const f = line.match(/^FP id=(\d+) name=(.*)$/);
-  if (f) { fpRows.push({ id: +f[1], name: f[2] }); return; }
-  if (line === 'FP end') { renderFp(); return; }
+  if (f) { fpRows.push({ kind: 'fp', id: +f[1], name: f[2] }); return; }
+  if (line === 'FP end') {
+    if (newKey && newKey.startsWith('fp:') && fpRows.some(r => rk(r) === newKey)) { editKey = newKey; draft = null; focusNext = true; newKey = null; }
+    renderFp();
+    send('@cl');   // 接著讀卡片名單
+    return;
+  }
+  const cm = line.match(/^CARD id=(\d+) name=(.*)$/);
+  if (cm) { cardRows.push({ kind: 'card', id: +cm[1], name: cm[2] }); return; }
+  if (line === 'CARD wait') return;
+  if (line === 'CARD end') {
+    if (newKey && newKey.startsWith('card:') && cardRows.some(r => rk(r) === newKey)) { editKey = newKey; draft = null; focusNext = true; }
+    newKey = null;
+    renderFp();
+    return;
+  }
   if (!line.startsWith('ST ')) log(line);  // 狀態行每 5 秒一次,不進記錄
+  const tm = line.match(/^T (ok|FAIL|manual|skip|info) ([^|]+?)(?: \|.*)?$/);
+  if (line === 'T 自檢開始') { selfRes = { ok: 0, fail: [], manual: 0, skip: 0 }; $('selfsum').textContent = '自檢中…'; }
+  else if (tm && selfRes) {
+    if (tm[1] === 'ok') selfRes.ok++;
+    else if (tm[1] === 'FAIL') selfRes.fail.push(tm[2]);
+    else if (tm[1] === 'manual') selfRes.manual++;
+    else if (tm[1] === 'skip') selfRes.skip++;
+  }
+  if (line.startsWith('T 自檢結束') && selfRes) {
+    const f = selfRes.fail.length;
+    $('selfsum').textContent = '自檢完成:通過 ' + selfRes.ok + ' 項' + (f ? ',失敗 ' + f + ' 項(' + selfRes.fail.join('、') + ')' : ',沒有失敗') +
+      ',需目視確認 ' + selfRes.manual + ' 項' + (selfRes.skip ? ',略過 ' + selfRes.skip + ' 項' : '');
+    toast(f ? '自檢有 ' + f + ' 項失敗' : '自檢通過', !!f);
+    selfRes = null;
+  }
+  const en = line.match(/^ENR (\d+)\/6/);
+  if (en) { if (adding === 'fp') setProg(+en[1]); return; }
   let m0 = line.match(/^ST acc=(\d) spd=([\d.]+) sensor=(\d)/);
   if (m0) {
     setState(m0[1] === '1');
@@ -270,15 +369,28 @@ function handle(line) {
   m0 = line.match(/^(OK|ERR) (\S+)\s*(.*)$/);
   if (m0) {
     const nm = ACT_NAME[m0[2]] || m0[2];
-    if (m0[2] === 'name') {
+    if (m0[2] === 'add' || m0[2] === 'addcard') {
+      const isCard = m0[2] === 'addcard';
+      endAdd();
+      if (m0[1] === 'OK') {
+        newKey = (isCard ? 'card:' : 'fp:') + m0[3]; loadFp();   // 清單載入後,新列自動展開改名
+        toast((isCard ? '卡片' : '指紋') + '已新增(ID ' + m0[3] + '),可直接命名');
+        if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+      } else {
+        toast((isCard ? '新增卡片未完成:' : '新增未完成:') + m0[3], true);
+        if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+      }
+      return;
+    }
+    if (m0[2] === 'name' || m0[2] === 'cname') {
       if (m0[1] === 'OK') {
         if (pend) {
-          const r = fpRows.find(x => x.id === pend.id);
+          const r = (pend.kind === 'card' ? cardRows : fpRows).find(x => x.id === pend.id);
           if (r) r.name = pend.name;
-          finishPend(); editId = null; draft = null; renderFp();   // 只更新該列,不重讀清單
+          finishPend(); editKey = null; draft = null; renderFp();   // 只更新該列,不重讀清單
         } else loadFp();   // 逾時後才收到回覆:資料可能不同步,重讀一次
       } else { finishPend(); focusNext = true; renderFp(); }
-    } else if (m0[1] === 'OK' && m0[2] === 'del') loadFp();
+    } else if (m0[1] === 'OK' && (m0[2] === 'del' || m0[2] === 'cdel')) loadFp();
     if (m0[1] === 'OK') { toast(nm + ' 完成'); if (navigator.vibrate) navigator.vibrate(m0[2] === 'seat' || m0[2] === 'fuel' ? [30, 40, 30] : 20); }
     else { toast(nm + ' 被拒絕:' + m0[3], true); if (navigator.vibrate) navigator.vibrate([80, 60, 80]); }
     return;
@@ -302,10 +414,10 @@ async function send(text) {
   try { await rx.writeValueWithResponse(enc.encode(text + '\n')); log('> ' + text); return true; }
   catch (e) { log('送出失敗:' + e.message); return false; }
 }
-function onDisc() { rx = tx = null; setConn('重新連線', false); log('已斷線'); }
+function onDisc() { rx = tx = null; if (adding) endAdd(); setConn('重新連線', false); log('已斷線'); }
 async function connect() {
   if (!navigator.bluetooth) {
-    const m = '此瀏覽器未啟用 Web Bluetooth。Chrome 請以 https 網址開啟;Brave 請到 brave://flags/#brave-web-bluetooth-api 設為 Enabled 後重新啟動';
+    const m = '此瀏覽器不支援 Web Bluetooth。請改用 Android Chrome,並以 https 網址開啟';
     log(m); toast(m, true); return;
   }
   try {
@@ -360,17 +472,19 @@ function build() {
     grid.appendChild(el);
     btnEls.push({ el, b });
   });
-  MENU.forEach(([name, cmd]) => {
-    const m = document.createElement('button');
-    m.className = 'mini'; m.textContent = name;
-    m.addEventListener('click', () => send(cmd));
-    $('menu').appendChild(m);
-  });
   const free = () => { const v = $('free').value.trim(); if (v) { send(v); $('free').value = ''; } };
   $('sendFree').addEventListener('click', free);
   $('free').addEventListener('keydown', e => { if (e.key === 'Enter') free(); });
   $('conn').addEventListener('click', connect);
   $('fpRefresh').addEventListener('click', loadFp);
+  document.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { if (!adding) send(b.dataset.t); }));
+  $('fpAdd').addEventListener('click', () => startAdd('fp'));
+  $('cardAdd').addEventListener('click', () => startAdd('card'));
+  $('addCancel').addEventListener('click', () => {
+    if (!adding) return;
+    $('addCancel').disabled = true; $('addTxt').textContent = '取消中…最多約 10 秒';
+    send('0');
+  });
   refresh();
 }
 build();
