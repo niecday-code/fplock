@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#e4e7e2">
 <title>FPLock 遙控</title>
 <style>
@@ -16,6 +16,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--base);color:var(--ink)}
+body.kb{padding-bottom:60vh}   /* 鍵盤開啟時多留空間,最底下的輸入框才捲得上來 */
 body{font-family:"Roboto Condensed","Noto Sans TC","PingFang TC",system-ui,sans-serif;
   padding:max(14px,env(safe-area-inset-top)) 14px max(18px,env(safe-area-inset-bottom));
   max-width:520px;margin:0 auto;-webkit-tap-highlight-color:transparent}
@@ -142,11 +143,22 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
   <div class="row">
     <button class="mini" data-t="@tsleep">立即睡眠</button>
     <button class="mini" data-t="@tnosleep">切換自動睡眠</button>
+    <button class="mini" data-t="@tvbat">量電瓶電壓</button>
+  </div>
+  <div class="hint">蜂鳴器(低電平觸發):先按「睡眠時蜂鳴腳」選一種,再按睡眠量測,比較電流。預設是「高」(= 不響)。</div>
+  <div class="row">
+    <button class="mini" data-t="@tbeep">嗶(成功音)</button>
+    <button class="mini" data-t="@tbeepf">嗶(失敗音)</button>
+  </div>
+  <div class="row">
+    <button class="mini" data-t="@tbuz 1">睡眠時蜂鳴腳:高(不響)</button>
+    <button class="mini" data-t="@tbuz 0">睡眠時蜂鳴腳:低(會一直響)</button>
+    <button class="mini" data-t="@tbuz 2">睡眠時蜂鳴腳:浮接</button>
   </div>
 </details>
 <details>
   <summary>文字輸入</summary>
-  <div class="row"><input id="free" placeholder="輸入文字,按 Enter 送出" autocomplete="off"><button class="mini" id="sendFree">送出</button></div>
+  <div class="row"><input id="free" placeholder="輸入文字,按 Enter 送出" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send"><button class="mini" id="sendFree">送出</button></div>
 </details>
 
 <script>
@@ -488,6 +500,28 @@ function build() {
   refresh();
 }
 build();
+
+// ===== 輸入框不被鍵盤擋住 =====
+// 手機鍵盤上方的工具列/建議列會蓋住輸入框:聚焦時把輸入框捲到鍵盤上方,並在鍵盤動畫期間多校正幾次
+(function () {
+  const isField = el => el && el.matches && el.matches('input,textarea');
+  const KB_BAR = 96;   // 預留給鍵盤上方工具列的高度(px)
+  function reveal(el) {
+    const vv = window.visualViewport;
+    const vh = vv ? vv.height : window.innerHeight;
+    const r = el.getBoundingClientRect();
+    const limit = vh - KB_BAR;
+    if (r.bottom > limit) window.scrollBy({ top: r.bottom - limit + 12, behavior: 'smooth' });
+    else if (r.top < 70) window.scrollBy({ top: r.top - 90, behavior: 'smooth' });
+  }
+  function keep(el) {
+    document.body.classList.add('kb');
+    [120, 350, 700].forEach(t => setTimeout(() => { if (document.activeElement === el) reveal(el); }, t));
+  }
+  document.addEventListener('focusin', e => { if (isField(e.target)) keep(e.target); });
+  document.addEventListener('focusout', () => setTimeout(() => { if (!isField(document.activeElement)) document.body.classList.remove('kb'); }, 250));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { const a = document.activeElement; if (isField(a)) keep(a); });
+})();
 </script>
 </body>
 </html>
