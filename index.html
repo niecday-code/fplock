@@ -140,10 +140,16 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
     <button class="mini" data-t="@tpwr 2">睡眠量測:停止</button>
     <button class="mini" data-t="@tpwr 3">睡眠量測:RESET 低</button>
   </div>
+  <div class="hint">加「60 秒」會在 60 秒後由計時器自動醒來:事件記錄只有一次「計時器」開機,就證明這段時間一直睡著(電表讀數可信)。</div>
+  <div class="row">
+    <button class="mini" data-t="@tpwr 1 60">睡眠量測 60 秒:射頻開</button>
+    <button class="mini" data-t="@tpwr 2 60">睡眠量測 60 秒:停止</button>
+  </div>
   <div class="row">
     <button class="mini" data-t="@tsleep">立即睡眠</button>
     <button class="mini" data-t="@tnosleep">切換自動睡眠</button>
     <button class="mini" data-t="@tvbat">量電瓶電壓</button>
+    <button class="mini" data-t="@tsleepwhy">為什麼沒睡?</button>
   </div>
   <div class="hint">蜂鳴器(低電平觸發):先按「睡眠時蜂鳴腳」選一種,再按睡眠量測,比較電流。預設是「高」(= 不響)。</div>
   <div class="row">
