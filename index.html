@@ -25,6 +25,10 @@ h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.02em}
 #conn{border:2px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:15px;
   padding:9px 14px;border-radius:999px;min-height:44px}
 #conn[data-ok="1"]{border-color:var(--go);color:var(--go)}
+.hbtns{display:flex;gap:8px;align-items:center}
+#disc{border:2px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:15px;padding:9px 14px;border-radius:999px;min-height:44px}
+#disc:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+#disc[hidden]{display:none}
 .plate{background:var(--panel);border:2px solid var(--line);border-radius:22px;display:grid;
   grid-template-columns:1fr auto 1fr;align-items:center;padding:18px 14px;margin-bottom:14px}
 .plate span{font-size:18px;color:var(--mute);text-align:center}
@@ -90,13 +94,21 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 .addbox[hidden]{display:none}
 .addbox p{margin:0 0 8px}
 .addbox progress{width:100%;height:14px;margin:0 0 10px}
+#spd{display:flex;align-items:center;justify-content:center}
+#spd .dot{width:12px;height:12px;border-radius:50%;margin-right:8px;background:var(--off);flex:none}
+#spd .b0{background:#d33a32}#spd .b1{background:#e0a800}#spd .b2{background:#2a9d5c}#spd .b3{background:#2d6ff0}#spd .b4{background:#8a3ffc}
+#spd.danger{color:var(--stop);font-weight:700}
+#pwr{text-align:center;min-height:20px;margin:-6px 0 10px}
+#conn[data-w="1"]{border-color:var(--stop);color:var(--stop)}
+.logbar{display:flex;gap:8px;margin:8px 0 0}
+.tvrow input{max-width:96px;text-align:center}
 @media (prefers-reduced-motion:reduce){.knob i{transition:none}}
 </style>
 </head>
 <body>
 <header>
   <h1>FPLock</h1>
-  <button id="conn" data-ok="0">連線</button>
+  <div class="hbtns"><button id="disc" hidden>斷線</button><button id="conn" data-ok="0">連線</button></div>
 </header>
 
 <section class="plate" aria-label="電門狀態">
@@ -106,11 +118,13 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 </section>
 
 <div id="spd"></div>
+<div id="pwr" class="hint" aria-live="polite"></div>
 <section class="grid" id="grid"></section>
 <div id="toast" role="status"></div>
 
 <details>
   <summary>記錄</summary>
+  <div class="logbar"><button class="mini" id="logCopy">複製</button><button class="mini" id="logClear">清除</button></div>
   <pre id="log" aria-live="polite"></pre>
 </details>
 <details id="fpd">
@@ -127,7 +141,7 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 </details>
 <details id="tools">
   <summary>測試工具</summary>
-  <div class="hint">輸出看上方「記錄」(以 T 開頭;綠 = 通過,紅 = 失敗,斜體 = 需要你目視確認)。量電流前先拔 USB。</div>
+  <div class="hint">輸出看上方「記錄」(以 T 開頭;綠 = 通過,紅 = 失敗,斜體 = 需要你目視確認)。</div>
   <div id="selfsum"></div>
   <div class="row">
     <button class="mini" data-t="@t">統計</button>
@@ -135,31 +149,23 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
     <button class="mini" data-t="@tself">自檢</button>
     <button class="mini" data-t="@tclr">清除統計</button>
   </div>
+  <div class="hint">階段 12:整機斷電架構。釋放自鎖後若手指或 USB 還有電,會顯示「仍有電」並重新自鎖。量待機電流要拔 USB、手指離開,等斷電後在 12V 端量。</div>
   <div class="row">
-    <button class="mini" data-t="@tpwr 1">睡眠量測:射頻開</button>
-    <button class="mini" data-t="@tpwr 2">睡眠量測:停止</button>
-    <button class="mini" data-t="@tpwr 3">睡眠量測:RESET 低</button>
-  </div>
-  <div class="hint">加「60 秒」會在 60 秒後由計時器自動醒來:事件記錄只有一次「計時器」開機,就證明這段時間一直睡著(電表讀數可信)。</div>
-  <div class="row">
-    <button class="mini" data-t="@tpwr 1 60">睡眠量測 60 秒:射頻開</button>
-    <button class="mini" data-t="@tpwr 2 60">睡眠量測 60 秒:停止</button>
-  </div>
-  <div class="row">
-    <button class="mini" data-t="@tsleep">立即睡眠</button>
-    <button class="mini" data-t="@tnosleep">切換自動睡眠</button>
+    <button class="mini" data-t="@toff">立即斷電</button>
+    <button class="mini" data-t="@tnooff">切換自動斷電</button>
+    <button class="mini" data-t="@toffwhy">為什麼沒斷電?</button>
     <button class="mini" data-t="@tvbat">量電瓶電壓</button>
-    <button class="mini" data-t="@tsleepwhy">為什麼沒睡?</button>
   </div>
-  <div class="hint">蜂鳴器(低電平觸發):先按「睡眠時蜂鳴腳」選一種,再按睡眠量測,比較電流。預設是「高」(= 不響)。</div>
+  <div class="hint">模擬電瓶電壓(電瓶端,V):用來測分級、警報與油箱蓋互鎖;「取消」改回實測。</div>
+  <div class="row tvrow">
+    <button class="mini" data-tv="10.8">10.8</button><button class="mini" data-tv="11.2">11.2</button><button class="mini" data-tv="11.8">11.8</button>
+    <button class="mini" data-tv="13.2">13.2</button><button class="mini" data-tv="14.0">14.0</button><button class="mini" data-tv="14.7">14.7</button>
+  </div>
+  <div class="row tvrow"><input id="tvIn" type="number" inputmode="decimal" step="0.1" min="0" max="30" placeholder="V"><button class="mini" id="tvSet">模擬</button><button class="mini" data-tv="0">取消</button></div>
   <div class="row">
     <button class="mini" data-t="@tbeep">嗶(成功音)</button>
     <button class="mini" data-t="@tbeepf">嗶(失敗音)</button>
-  </div>
-  <div class="row">
-    <button class="mini" data-t="@tbuz 1">睡眠時蜂鳴腳:高(不響)</button>
-    <button class="mini" data-t="@tbuz 0">睡眠時蜂鳴腳:低(會一直響)</button>
-    <button class="mini" data-t="@tbuz 2">睡眠時蜂鳴腳:浮接</button>
+    <button class="mini" data-t="@tbeepa">嗶(危險警報)</button>
   </div>
 </details>
 <details>
@@ -172,6 +178,8 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 // 指令對照:韌體階段 9 的 @ 指令(不受選單狀態影響)。填 null 可停用該按鈕。
 const CMD = { accOn: '@acc on', accOff: '@acc off', seat: '@seat', fuel: '@fuel' };
 const HOLD_MS = 800;   // 「按住」按鈕要按多久才送出
+const AUTO_DISC_S = 0;    // 0 = 網頁不主動斷線(預設)。想讓網頁閒置 N 秒後自己斷線可改成秒數;沒有網頁斷線時,韌體也會在 5 分鐘沒有任何指令後自己斷電
+const WAIT_S = 60;        // 「等待喚醒」最多等幾秒
 const BUTTONS = [
   { cmd: 'accOn',  label: '電門開', sub: '輕點', hold: false, cls: 'go'   },
   { cmd: 'accOff', label: '電門關', sub: '按住', hold: true,  cls: 'stop' },
@@ -187,18 +195,21 @@ const $ = id => document.getElementById(id);
 const enc = new TextEncoder(), dec = new TextDecoder('utf-8');
 let dev = null, rx = null, tx = null, buf = '';
 const btnEls = [];
+let band = -1;   // 電壓分級:0 紅 1 黃 2 綠 3 藍(行駛中) 4 紫;-1 = 未知
 
+const pad = (n, w = 2) => String(n).padStart(w, '0');
+function stamp() { const d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '.' + pad(d.getMilliseconds(), 3); }
 function log(t) {
   const el = $('log');
   const sp = document.createElement('span');
-  sp.textContent = t + '\n';
+  sp.textContent = stamp() + ' ' + t + '\n';
   const m = t.match(/^T (ok|FAIL|manual|skip|info) /);
   if (m) sp.className = 't-' + m[1];
   el.appendChild(sp);
   while (el.childNodes.length > 300) el.removeChild(el.firstChild);   // 自檢與統計行數多,保留 300 行
   el.scrollTop = el.scrollHeight;
 }
-function setConn(text, ok) { const c = $('conn'); c.textContent = text; c.dataset.ok = ok ? '1' : '0'; refresh(); }
+function setConn(text, ok) { const c = $('conn'); c.textContent = text; c.dataset.ok = ok ? '1' : '0'; $('disc').hidden = !ok; refresh(); }
 function setState(on) {
   const k = $('knob');
   k.dataset.s = on ? 'on' : 'off';
@@ -208,9 +219,11 @@ function setState(on) {
 function refresh() {
   const live = !!rx;
   btnEls.forEach(({ el, b }) => {
-    el.disabled = !live || CMD[b.cmd] == null;
-    el.querySelector('small').textContent = CMD[b.cmd] == null ? '尚未支援' : b.sub;
+    const blocked = b.cmd === 'fuel' && band === 3;   // 行駛中(藍)韌體會拒絕,先在畫面上擋掉
+    el.disabled = !live || CMD[b.cmd] == null || blocked;
+    el.querySelector('small').textContent = CMD[b.cmd] == null ? '尚未支援' : (blocked ? '行駛中不可開' : b.sub);
   });
+  document.querySelectorAll('[data-tv],#tvSet,#tvIn').forEach(b => { b.disabled = !live || !!adding; });
   $('fpRefresh').disabled = !live;
   $('fpAdd').disabled = !live || !!adding;
   $('cardAdd').disabled = !live || !!adding;
@@ -378,10 +391,15 @@ function handle(line) {
   }
   const en = line.match(/^ENR (\d+)\/6/);
   if (en) { if (adding === 'fp') setProg(+en[1]); return; }
-  let m0 = line.match(/^ST acc=(\d) spd=([\d.]+) sensor=(\d)/);
+  let m0 = line.match(/^ST acc=(\d) vbat=([\d.]+) band=(\d)/);
   if (m0) {
     setState(m0[1] === '1');
-    $('spd').textContent = m0[3] === '1' ? '車速 ' + m0[2] + ' km/h' : '車速偵測未啟用(桌面測試)';
+    const BAND = ['危險(過低)', '過低', '正常', '行駛中(不可開油箱蓋)', '危險(過高)'];
+    const nb = +m0[3];
+    $('spd').innerHTML = '<span class="dot b' + nb + '"></span>';
+    $('spd').append('電瓶 ' + m0[2] + ' V · ' + (BAND[nb] || '?'));
+    $('spd').classList.toggle('danger', nb === 0 || nb === 4);
+    if (nb !== band) { band = nb; refresh(); if (nb === 0 || nb === 4) toast('電瓶電壓危險:' + m0[2] + ' V', true); }
     return;
   }
   m0 = line.match(/^(OK|ERR) (\S+)\s*(.*)$/);
@@ -427,38 +445,109 @@ function onNote(ev) {
     if (line) handle(line);
   }
 }
-async function send(text) {
-  if (!rx) return false;
-  try { await rx.writeValueWithResponse(enc.encode(text + '\n')); log('> ' + text); return true; }
-  catch (e) { log('送出失敗:' + e.message); return false; }
+// 送出排隊:Web Bluetooth 不能同時進行兩個寫入(會出現 GATT operation already in progress),所以一個接一個送
+let sendChain = Promise.resolve();
+function send(text) {
+  const job = sendChain.then(async () => {
+    if (!rx) return false;
+    try { await rx.writeValueWithResponse(enc.encode(text + '\n')); log('> ' + text); markAct(); return true; }
+    catch (e) { log('送出失敗:' + e.message); return false; }
+  });
+  sendChain = job.catch(() => {});
+  return job;
 }
-function onDisc() { rx = tx = null; if (adding) endAdd(); setConn('重新連線', false); log('已斷線'); }
+let waiting = false, waitCancel = false, lastAct = Date.now(), discTimer = null, lastWhy = '';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function markAct() { lastAct = Date.now(); }
+function setPwr(t) { $('pwr').textContent = t || ''; }
+function onDisc() {
+  rx = tx = null; sendChain = Promise.resolve();
+  if (adding) endAdd();
+  clearInterval(discTimer); discTimer = null;
+  setConn(waiting ? '等待裝置…(點一下取消)' : '重新連線', false);
+  log('已斷線');
+  if (!waiting) setPwr(lastWhy || '裝置已斷線。整機閒置會自動斷電:碰一下指紋感應面喚醒後,再按「重新連線」。');
+  lastWhy = '';
+}
+// 連線後的閒置計時:AUTO_DISC_S 秒沒操作就自己斷線,整機才能早一點斷電省電
+function startIdleWatch() {
+  clearInterval(discTimer); markAct();
+  if (!AUTO_DISC_S) return;
+  discTimer = setInterval(() => {
+    if (!rx) return;
+    if (adding) { markAct(); return; }
+    const left = AUTO_DISC_S - Math.floor((Date.now() - lastAct) / 1000);
+    if (left <= 0) { lastWhy = '閒置 ' + AUTO_DISC_S + ' 秒,已自動斷線(整機接著會自動斷電)。要再操作:碰一下指紋感應面,再按「重新連線」。'; toast('閒置自動斷線'); dev.gatt.disconnect(); }
+    else if (left <= 30) setPwr(left + ' 秒後自動斷線(點一下畫面可延長)');
+    else setPwr('');
+  }, 1000);
+}
+// 手動斷線:按「斷線」才會斷,網頁不會自己斷。斷線後整機閒置就會自動斷電
+function disconnectNow() {
+  if (!rx || !dev) return;
+  if (adding && !confirm('正在新增中,斷線會中止這次新增,確定要斷線?')) return;
+  lastWhy = '已手動斷線。整機閒置後會自動斷電(約 30 秒內);要再操作:碰一下指紋感應面,再按「重新連線」。';
+  toast('已斷線');
+  try { dev.gatt.disconnect(); } catch (e) { log('斷線失敗:' + e.message); }
+}
 async function connect() {
+  if (waiting) {   // 等待中再按一次 = 取消
+    waitCancel = true;
+    try { if (dev && dev.gatt.connected === false) dev.gatt.disconnect(); } catch (e) {}
+    return;
+  }
   if (!navigator.bluetooth) {
     const m = '此瀏覽器不支援 Web Bluetooth。請改用 Android Chrome,並以 https 網址開啟';
     log(m); toast(m, true); return;
   }
   try {
-    if (!dev) {
+    if (!dev) {   // 第一次要選裝置:先碰一下指紋感應面讓整機醒來,清單才看得到 FPLock
       dev = await navigator.bluetooth.requestDevice({
         filters: [{ services: [NUS] }, { namePrefix: 'FPLock' }], optionalServices: [NUS] });
       dev.addEventListener('gattserverdisconnected', onDisc);
     }
-    setConn('連線中…', false);
-    const srv = await dev.gatt.connect();
-    const svc = await srv.getPrimaryService(NUS);
-    rx = await svc.getCharacteristic(RXU);
-    tx = await svc.getCharacteristic(TXU);
-    tx.addEventListener('characteristicvaluechanged', onNote);
-    await tx.startNotifications();   // 第一次會跳出配對碼輸入
-    setConn('已連線', true);
-    send('@st');
-    loadFp();
   } catch (e) {
-    log('連線失敗:' + e.name + ' ' + e.message);
-    toast('連線失敗:' + e.name + ' ' + e.message, true);
-    rx = tx = null;
-    setConn(dev ? '重新連線' : '連線', false);
+    log('選擇裝置失敗:' + e.name + ' ' + e.message);
+    toast(e.name === 'NotFoundError' ? '沒有看到 FPLock:先碰一下指紋感應面讓整機醒來,再按連線' : '連線失敗:' + e.name + ' ' + e.message, true);
+    return;
+  }
+  // 等待喚醒:裝置沒廣播時,系統會一直等到它醒來(最多 WAIT_S 秒),醒來就自動連上
+  waiting = true; waitCancel = false;
+  const until = Date.now() + WAIT_S * 1000;
+  let lastErr = null, tick = null;
+  $('conn').dataset.w = '1';
+  setConn('等待裝置…(點一下取消)', false);
+  const showWait = () => setPwr('等待裝置喚醒:碰一下指紋感應面(剩 ' + Math.max(0, Math.ceil((until - Date.now()) / 1000)) + ' 秒)');
+  showWait();
+  tick = setInterval(showWait, 500);
+  try {
+    while (!waitCancel && Date.now() < until) {
+      try {
+        const srv = await dev.gatt.connect();
+        const svc = await srv.getPrimaryService(NUS);
+        rx = await svc.getCharacteristic(RXU);
+        tx = await svc.getCharacteristic(TXU);
+        tx.addEventListener('characteristicvaluechanged', onNote);
+        await tx.startNotifications();   // 第一次會跳出配對碼輸入
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e; rx = tx = null;
+        if (waitCancel) break;
+        if (e.name === 'SecurityError' || e.name === 'NotAllowedError') break;   // 配對失敗不用一直重試
+        await sleep(700);
+      }
+    }
+  } finally {
+    clearInterval(tick); waiting = false; $('conn').dataset.w = '0';
+  }
+  if (rx) {
+    setConn('已連線', true); setPwr(''); startIdleWatch();
+    send('@st'); loadFp();
+  } else {
+    const msg = waitCancel ? '已取消等待' : (lastErr ? '連線失敗:' + lastErr.name + ' ' + lastErr.message : '等待逾時,裝置沒有醒來');
+    log(msg); toast(msg, !waitCancel);
+    setConn('重新連線', false); setPwr('裝置沒有回應:碰一下指紋感應面讓整機醒來,再按「重新連線」。');
   }
 }
 async function fire(b, el) {
@@ -497,6 +586,17 @@ function build() {
   $('fpRefresh').addEventListener('click', loadFp);
   document.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { if (!adding) send(b.dataset.t); }));
   $('fpAdd').addEventListener('click', () => startAdd('fp'));
+  $('disc').addEventListener('click', disconnectNow);
+  document.addEventListener('pointerdown', markAct, true);
+  document.addEventListener('keydown', markAct, true);
+  $('logClear').addEventListener('click', () => { $('log').textContent = ''; });
+  $('logCopy').addEventListener('click', async () => {
+    const t = $('log').textContent;
+    try { await navigator.clipboard.writeText(t); toast('記錄已複製'); }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($('log')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast('請手動複製(已選取)', true); }
+  });
+  document.querySelectorAll('[data-tv]').forEach(b => b.addEventListener('click', () => { if (!adding) send('@tvset ' + b.dataset.tv); }));
+  $('tvSet').addEventListener('click', () => { const v = parseFloat($('tvIn').value); if (isNaN(v) || v < 0 || v > 30) { toast('請輸入 0~30 的電壓', true); return; } send('@tvset ' + v); });
   $('cardAdd').addEventListener('click', () => startAdd('card'));
   $('addCancel').addEventListener('click', () => {
     if (!adding) return;
