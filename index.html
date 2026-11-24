@@ -98,6 +98,7 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 #spd .dot{width:12px;height:12px;border-radius:50%;margin-right:8px;background:var(--off);flex:none}
 #spd .b0{background:#d33a32}#spd .b1{background:#e0a800}#spd .b2{background:#2a9d5c}#spd .b3{background:#2d6ff0}#spd .b4{background:#8a3ffc}
 #spd.danger{color:var(--stop);font-weight:700}
+#sense.warn{color:var(--stop);font-weight:700}
 #pwr{text-align:center;min-height:20px;margin:-6px 0 10px}
 #conn[data-w="1"]{border-color:var(--stop);color:var(--stop)}
 .logbar{display:flex;gap:8px;margin:8px 0 0}
@@ -118,6 +119,7 @@ pre{margin:8px 0 0;max-height:240px;overflow:auto;font:13px/1.45 ui-monospace,Me
 </section>
 
 <div id="spd"></div>
+<div id="sense" class="hint" aria-live="polite" style="text-align:center;min-height:20px;margin:-4px 0 4px"></div>
 <div id="pwr" class="hint" aria-live="polite"></div>
 <section class="grid" id="grid"></section>
 <div id="toast" role="status"></div>
@@ -396,15 +398,19 @@ function handle(line) {
   }
   const en = line.match(/^ENR (\d+)\/6/);
   if (en) { if (adding === 'fp') setProg(+en[1]); return; }
-  let m0 = line.match(/^ST acc=(\d) vbat=([\d.]+) band=(\d)/);
+  let m0 = line.match(/^ST acc=(\d)(?: sense=(\d))? vbat=([\d.]+) band=(\d)/);
   if (m0) {
-    setState(m0[1] === '1');
+    // acc = 韌體記錄;sense = GPIO9 實際偵測(沒有 sense 的舊韌體就用記錄)。畫面以實際偵測為準
+    const rec = m0[1] === '1', real = m0[2] == null ? rec : m0[2] === '1';
+    setState(real);
+    $('sense').textContent = m0[2] == null ? '' : (rec === real ? '電門偵測:' + (real ? '導通' : '斷開') + '(GPIO9 實測)' : '記錄「' + (rec ? '開' : '關') + '」,實際偵測「' + (real ? '開' : '關') + '」,兩者不一致');
+    $('sense').classList.toggle('warn', m0[2] != null && rec !== real);
     const BAND = ['危險(過低)', '過低', '正常', '行駛中(不可開油箱蓋)', '危險(過高)'];
-    const nb = +m0[3];
+    const nb = +m0[4];
     $('spd').innerHTML = '<span class="dot b' + nb + '"></span>';
-    $('spd').append('電瓶 ' + m0[2] + ' V · ' + (BAND[nb] || '?'));
+    $('spd').append('電瓶 ' + m0[3] + ' V · ' + (BAND[nb] || '?'));
     $('spd').classList.toggle('danger', nb === 0 || nb === 4);
-    if (nb !== band) { band = nb; refresh(); if (nb === 0 || nb === 4) toast('電瓶電壓危險:' + m0[2] + ' V', true); }
+    if (nb !== band) { band = nb; refresh(); if (nb === 0 || nb === 4) toast('電瓶電壓危險:' + m0[3] + ' V', true); }
     return;
   }
   m0 = line.match(/^(OK|ERR) (\S+)\s*(.*)$/);
